@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Launcher</title>
+    <link rel="stylesheet" href="style.css?v=5">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Simple boot screen -->
+    <div id="terminal-boot" class="hidden">
+        <div class="boot-text"></div>
+    </div>
+
+    <!-- Clean header -->
+    <header>
+        <div class="header-main">
+            <h1>🎮 Retro Launcher</h1>
+            <input type="text" id="game-search" placeholder="Search games..." autocomplete="off">
+        </div>
+        <div class="header-status">
+            <div id="system-ticker" class="ticker">INITIALIZING_NEURAL_LINK...</div>
+            <div class="neural-meter">
+                <span id="neural-date">HEX_TIME: 00:00:00</span>
+                <span id="neural-load">LOAD: 0%</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main content area -->
+    <div class="container">
+        <!-- Systems sidebar -->
+        <aside class="systems">
+            <h2>Systems</h2>
+            <ul id="system-list">
+                <li id="system-recents" class="system-item">★ Recents</li>
+            </ul>
+        </aside>
+
+        <!-- Game grid -->
+        <main class="content">
+            <div class="content-header">
+                <h2 id="current-system-title">Select a System</h2>
+            </div>
+            <div id="game-grid" class="game-grid"></div>
+        </main>
+
+        <!-- Game details panel -->
+        <aside class="details">
+            <div id="game-details">
+                <div class="placeholder">Select a game to see details</div>
+            </div>
+            <div class="actions">
+                <button id="launch-native-btn" class="btn primary" disabled>▶ Play</button>
+                <button id="execute-btn" class="btn secondary" disabled>🌐 Web</button>
+                <button id="favorite-btn" class="btn icon">♥</button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Fullscreen emulator -->
+    <div id="emulator-container" class="hidden">
+        <div class="emulator-header">
+            <span id="emu-title">Playing...</span>
+            <button id="close-emu">✕ Close</button>
+        </div>
+        <div id="emulator-target"></div>
+        <div class="emulator-footer">
+            <div id="emu-logs"></div>
+        </div>
+    </div>
+
+    <script src="app.js?v=4"></script>
+</body>
+
+</html>

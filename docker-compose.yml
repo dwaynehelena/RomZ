@@ -1,0 +1,19 @@
+services:
+  romz:
+    build: .
+    container_name: romz-dashboard
+    ports:
+      - "8000:8000"
+    volumes:
+      # Map the ROM library volume
+      - "/Volumes/2TB/2024.Android.Shield.Retro.Console.Mod.v1-MarkyMarc:/roms:ro"
+      # Map the project for persistent data (recents/favorites)
+      - "./server/recents.json:/app/server/recents.json"
+      # Optionally map favorites if it exists
+      # - "./server/favorites.json:/app/server/favorites.json"
+    environment:
+      - ROM_BASE_PATH=/roms/HSunkyBunch/Hyperspin
+      - CLIENT_DIR=/app/client
+      - HOST=0.0.0.0
+      - PORT=8000
+    restart: unless-stopped

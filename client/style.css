@@ -1,0 +1,415 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+}
+
+/* Boot screen */
+#terminal-boot {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#terminal-boot.hidden {
+    display: none;
+}
+
+.boot-text {
+    font-family: monospace;
+    color: #0f0;
+    font-size: 14px;
+}
+
+.boot-text p {
+    margin: 4px 0;
+}
+
+/* Header */
+header {
+    background: #16213e;
+    padding: 15px 25px;
+    border-bottom: 2px solid #0f3460;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.header-main {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+header h1 {
+    color: #00d4ff;
+    font-size: 24px;
+}
+
+#game-search {
+    padding: 8px 12px;
+    background: #0f3460;
+    border: 1px solid #00d4ff;
+    border-radius: 4px;
+    color: #fff;
+    width: 250px;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+#game-search:focus {
+    outline: none;
+    border-color: #00d4ff;
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+.header-status {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.ticker {
+    font-family: monospace;
+    font-size: 12px;
+    color: #00d4ff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.8;
+}
+
+.neural-meter {
+    display: flex;
+    gap: 15px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #0f0;
+}
+
+#neural-date,
+#neural-load {
+    background: rgba(0, 255, 0, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 255, 0, 0.2);
+}
+
+/* Main layout - Always 3 columns */
+.container {
+    display: grid;
+    grid-template-columns: 220px 1fr 320px;
+    gap: 10px;
+    padding: 20px;
+    height: calc(100vh - 120px);
+}
+
+/* Systems sidebar */
+.systems {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+.systems h2 {
+    color: #00d4ff;
+    font-size: 14px;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+#system-list {
+    list-style: none;
+}
+
+.system-item {
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-size: 14px;
+}
+
+.system-item:hover {
+    background: #0f3460;
+}
+
+.system-item.active {
+    background: #00d4ff;
+    color: #000;
+    font-weight: bold;
+}
+
+.system-item.special-system {
+    color: #ffd700;
+}
+
+/* Content area */
+.content {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.content-header h2 {
+    color: #00d4ff;
+    margin-bottom: 15px;
+}
+
+/* Game grid */
+.game-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 15px;
+}
+
+.game-card {
+    background: #0f3460;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s;
+    border: 2px solid transparent;
+}
+
+.game-card:hover {
+    transform: scale(1.05);
+    border-color: #00d4ff;
+}
+
+.game-card.is-favorite {
+    border-color: #ffd700;
+}
+
+.artwork {
+    width: 100%;
+    height: 120px;
+    background: #1a1a2e;
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+}
+
+.title {
+    padding: 10px;
+    font-size: 13px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.placeholder-msg,
+.placeholder {
+    text-align: center;
+    padding: 40px 20px;
+    opacity: 0.5;
+}
+
+/* Details panel - ALWAYS VISIBLE */
+.details {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 20px;
+    overflow-y: auto;
+    display: block !important;
+    /* Force always visible */
+}
+
+#game-details {
+    margin-bottom: 20px;
+}
+
+.game-info h2 {
+    color: #00d4ff;
+    font-size: 18px;
+    margin-bottom: 15px;
+}
+
+.media-container {
+    margin-bottom: 15px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.detail-video,
+.detail-artwork {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    background: #0f3460;
+    border-radius: 8px;
+}
+
+.detail-artwork {
+    background-size: cover;
+    background-position: center;
+}
+
+.meta-grid {
+    margin: 15px 0;
+    font-size: 13px;
+}
+
+.meta-grid p {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #0f3460;
+}
+
+.meta-grid strong {
+    opacity: 0.7;
+}
+
+.description {
+    font-size: 13px;
+    line-height: 1.6;
+    opacity: 0.8;
+    margin-top: 10px;
+}
+
+/* Action buttons */
+.actions {
+    display: flex;
+    gap: 10px;
+    flex-direction: column;
+}
+
+.btn {
+    padding: 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.btn.primary {
+    background: #00d4ff;
+    color: #000;
+}
+
+.btn.primary:not(:disabled):hover {
+    background: #00a8cc;
+}
+
+.btn.secondary {
+    background: #0f3460;
+    color: #fff;
+    border: 1px solid #00d4ff;
+}
+
+.btn.secondary:not(:disabled):hover {
+    background: #1a4d7a;
+}
+
+.btn.icon {
+    background: transparent;
+    color: #fff;
+    border: 1px solid #fff;
+}
+
+.btn.icon.active {
+    background: #ffd700;
+    color: #000;
+    border-color: #ffd700;
+}
+
+/* Emulator fullscreen */
+#emulator-container {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+}
+
+#emulator-container.hidden {
+    display: none;
+}
+
+.emulator-header {
+    background: #16213e;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#emu-title {
+    color: #00d4ff;
+    font-weight: 600;
+}
+
+#close-emu {
+    background: #ff4757;
+    border: none;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#close-emu:hover {
+    background: #ff3838;
+}
+
+#emulator-target {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.emulator-footer {
+    background: #16213e;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+#emu-logs p {
+    margin: 2px 0;
+    color: #0f0;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0f3460;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #00d4ff;
+    border-radius: 4px;
+}

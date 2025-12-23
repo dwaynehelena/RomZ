@@ -1,0 +1,21 @@
+# Logs
+*.log
+server_log.txt
+server_log_8002.txt
+._*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+env/
+venv/
+.env
+
+# Local Data
+server/favorites.json
+server/recents.json
+
+# OS files
+.DS_Store
+Thumbs.db
