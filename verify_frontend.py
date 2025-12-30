@@ -8,7 +8,7 @@ def verify_frontend():
 
         # Start server in background
         import subprocess
-        server = subprocess.Popen(["/home/jules/.pyenv/versions/3.12.12/bin/python", "server/main.py"], env={"CLIENT_DIR": "/app/client", "ROM_BASE_PATH": "/roms", "CONFIG_PATH": "/config"})
+        server = subprocess.Popen(["/home/jules/.pyenv/versions/3.12.12/bin/python", "server/main.py"], env={"CLIENT_DIR": "/app/client", "ROM_BASE_PATH": "./roms_test", "CONFIG_PATH": "./config_test"})
         time.sleep(5) # Wait for startup
 
         try:

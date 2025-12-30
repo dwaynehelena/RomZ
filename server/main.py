@@ -1,18 +1,120 @@
 import os
+import sys
 import json
+import asyncio
 import subprocess
-from fastapi import FastAPI, HTTPException
+import threading
+import logging
+from typing import List, Dict, Optional, Set, Any
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from typing import List, Dict, Optional, Set
+from pydantic import BaseModel
 import xmltodict
+
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("retro-api")
+
+# Ensure server directory is in path for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# --- RGSX Integration Imports ---
+try:
+    from rgsx import config as rgsx_config
+    from rgsx import network as rgsx_network
+    from rgsx import utils as rgsx_utils
+    from rgsx.rgsx_settings import get_sources_zip_url
+    from rgsx.utils import extract_data, load_sources
+except ImportError as e:
+    logger.error(f"Failed to import RGSX modules: {e}")
+    # Minimal mocks if RGSX fails to load
+    class MockConfig:
+        GAMES_FOLDER = "/config/games"
+        SAVE_FOLDER = "/config"
+        OTA_data_ZIP = ""
+        download_queue = []
+        download_progress = {}
+        history = []
+    rgsx_config = MockConfig()
 
 app = FastAPI(title="Cyberpunk Retro API")
 
-FAVORITES_FILE = os.path.join(os.path.dirname(__file__), "favorites.json")
-RECENTS_FILE = os.path.join(os.path.dirname(__file__), "recents.json")
+# --- Configuration & Paths ---
+BASE_PATH = os.getenv("ROM_BASE_PATH", "/roms")
+CONFIG_PATH = os.getenv("CONFIG_PATH", "/config")
+CLIENT_DIR = os.getenv("CLIENT_DIR", "/app/client")
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", 8000))
 
+FAVORITES_FILE = os.path.join(CONFIG_PATH, "favorites.json")
+RECENTS_FILE = os.path.join(CONFIG_PATH, "recents.json")
+
+# Ensure config directories exist
+os.makedirs(CONFIG_PATH, exist_ok=True)
+os.makedirs(BASE_PATH, exist_ok=True)
+
+# --- Models ---
+class DownloadRequest(BaseModel):
+    url: str
+    game_name: str
+    platform: str
+
+# --- RGSX Startup Logic ---
+@app.on_event("startup")
+async def startup_event():
+    """Initializes RGSX data (downloads games.zip if needed) on server startup."""
+    logger.info("Server Startup: Initializing RGSX...")
+
+    # 1. Check if we need to download game lists
+    games_folder = getattr(rgsx_config, 'GAMES_FOLDER', '/config/games')
+    try:
+        if not os.path.exists(games_folder) or not os.listdir(games_folder):
+            logger.info("RGSX: Game lists missing. Downloading games.zip...")
+            asyncio.create_task(update_rgsx_data())
+        else:
+            logger.info("RGSX: Game lists found.")
+    except Exception as e:
+        logger.error(f"Error checking game lists: {e}")
+
+    # Start the download queue worker
+    if hasattr(rgsx_network, 'download_queue_worker'):
+        threading.Thread(target=rgsx_network.download_queue_worker, daemon=True).start()
+
+async def update_rgsx_data():
+    """Downloads and extracts the RGSX game database."""
+    try:
+        zip_url = rgsx_config.OTA_data_ZIP
+        # Verify if we have a custom source
+        custom_url = get_sources_zip_url(zip_url) if 'get_sources_zip_url' in globals() else zip_url
+        if custom_url:
+            zip_url = custom_url
+
+        zip_path = os.path.join(rgsx_config.SAVE_FOLDER, "data_download.zip")
+
+        logger.info(f"Downloading RGSX data from {zip_url}...")
+
+        import requests
+        with requests.get(zip_url, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            with open(zip_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+        logger.info("Extracting RGSX data...")
+        success, msg = extract_data(zip_path, rgsx_config.SAVE_FOLDER, zip_url)
+        if success:
+            logger.info(f"RGSX Data Updated: {msg}")
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        else:
+            logger.error(f"RGSX Extraction Failed: {msg}")
+
+    except Exception as e:
+        logger.error(f"Failed to update RGSX data: {e}")
+
+# --- Helper Functions ---
 def load_favorites() -> Set[str]:
     if os.path.exists(FAVORITES_FILE):
         try:
@@ -36,11 +138,10 @@ def load_recents() -> List[str]:
     return []
 
 def save_recents(recents: List[str]):
-    # Keep only top 20 recents
     with open(RECENTS_FILE, "w") as f:
         json.dump(recents[:20], f)
 
-# Enable CORS and Performance Headers
+# --- Middleware ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -55,147 +156,64 @@ async def add_security_headers(request, call_next):
     response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
     return response
 
-# Configuration from Environment
-BASE_PATH = os.getenv("ROM_BASE_PATH", "/Volumes/2TB/2024.Android.Shield.Retro.Console.Mod.v1-MarkyMarc/HSunkyBunch/Hyperspin")
-CLIENT_DIR = os.getenv("CLIENT_DIR", "/Volumes/FATTY2/RomZ/client")
-HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", 8000))
-
-
+# --- API Endpoints: Library ---
 
 @app.get("/api/systems")
 async def get_systems():
     try:
-        systems_path = os.path.join(BASE_PATH, "Emulators")
-        systems = [d for d in os.listdir(systems_path) if os.path.isdir(os.path.join(systems_path, d))]
+        # Scan /roms directory
+        systems = []
+        if os.path.exists(BASE_PATH):
+            for d in os.listdir(BASE_PATH):
+                full_path = os.path.join(BASE_PATH, d)
+                if os.path.isdir(full_path) and not d.startswith('.'):
+                    if any(os.path.isfile(os.path.join(full_path, f)) for f in os.listdir(full_path)):
+                         systems.append(d)
         return {"systems": sorted(systems)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/games/{system}")
 async def get_games(system: str):
-    db_path = os.path.join(BASE_PATH, "Databases", system, f"{system}.xml")
-    if not os.path.exists(db_path):
-        # Fallback to listing ROM directory if XML doesn't exist
+    rom_dir = os.path.join(BASE_PATH, system)
+    if not os.path.exists(rom_dir):
         rom_dir = os.path.join(BASE_PATH, "Emulators", system, "roms")
         if not os.path.exists(rom_dir):
-            return {"games": []}
-        games = []
-        for f in os.listdir(rom_dir):
-            if f.endswith(('.nes', '.sfc', '.smc', '.gba', '.gb', '.gbc', '.bin', '.gen', '.zip')):
-                games.append({"name": f, "description": f, "path": f})
-        return {"games": sorted(games, key=lambda x: x['name'])}
+             return {"games": []}
 
+    games = []
     try:
-        with open(db_path, "r", encoding="utf-8") as f:
-            data = xmltodict.parse(f.read())
-            
-        menu = data.get("menu", {})
-        game_list = menu.get("game", [])
+        valid_exts = ('.zip', '.nes', '.sfc', '.smc', '.gba', '.gb', '.gbc', '.bin', '.gen',
+                      '.n64', '.z64', '.v64', '.md', '.iso', '.pbp', '.cue', '.chd', '.gcz', '.rvz', '.dsk', '.dim')
         
-        # Ensure game_list is a list
-        if isinstance(game_list, dict):
-            game_list = [game_list]
-            
-        games = []
-        for g in game_list:
-            games.append({
-                "name": g.get("@name"),
-                "description": g.get("description"),
-                "manufacturer": g.get("manufacturer"),
-                "year": g.get("year"),
-                "genre": g.get("genre"),
-                "rating": g.get("rating")
-            })
-            
-        return {"games": games}
+        for f in os.listdir(rom_dir):
+            if f.lower().endswith(valid_exts):
+                games.append({
+                    "name": f,
+                    "description": f,
+                    "path": f
+                })
+        return {"games": sorted(games, key=lambda x: x['name'])}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error listing games for {system}: {e}")
+        return {"games": []}
 
 @app.get("/api/rom/{system}/{game_name}")
 async def get_rom(system: str, game_name: str):
-    system_rom_dir = os.path.join(BASE_PATH, "Emulators", system, "roms")
-    if not os.path.exists(system_rom_dir):
-        # Try without "roms" subfolder
-        system_rom_dir = os.path.join(BASE_PATH, "Emulators", system)
-        if not os.path.exists(system_rom_dir):
-            raise HTTPException(status_code=404, detail="System ROM directory not found")
-
-    # Strip extension if provided (EmulatorJS often appends one)
-    base_name = game_name
-    # Common extensions to strip
-    extensions = [
-        '.zip', '.nes', '.sfc', '.smc', '.gba', '.gb', '.gbc', '.bin', '.gen', 
-        '.n64', '.z64', '.v64', '.md', '.iso', '.pbp', '.cue', '.dsk', '.cpr', 
-        '.j64', '.lnx', '.chd', '.a26', '.a52', '.a78', '.col', '.vec', '.rom', 
-        '.pce', '.sg', '.tap', '.fds', '.wsc', '.vb', '.ngp', '.ngc', '.gcz', '.rvz'
+    search_dirs = [
+        os.path.join(BASE_PATH, system),
+        os.path.join(BASE_PATH, "Emulators", system, "roms")
     ]
-
-
-    for ext in extensions:
-        if game_name.lower().endswith(ext):
-            base_name = game_name[:-len(ext)]
-            break
-
-    # Look for the file (case insensitive match)
-    files = sorted(os.listdir(system_rom_dir))
     
-    # 1. Exact match with stripped base
-    for f in files:
-        f_base = os.path.splitext(f)[0].lower()
-        if f_base == base_name.lower():
-            return FileResponse(os.path.join(system_rom_dir, f))
+    base_name = os.path.splitext(game_name)[0]
     
-    # 2. Match with original game_name (if it had an extension that wasn't stripped)
-    for f in files:
-        if f.lower() == game_name.lower():
-            return FileResponse(os.path.join(system_rom_dir, f))
+    for d in search_dirs:
+        if not os.path.exists(d): continue
+        for f in os.listdir(d):
+            if f == game_name or os.path.splitext(f)[0] == base_name:
+                return FileResponse(os.path.join(d, f))
 
-    # 3. Fuzzy match: base name is in the filename
-    for f in files:
-        if base_name.lower() in f.lower():
-            return FileResponse(os.path.join(system_rom_dir, f))
-            
-    raise HTTPException(status_code=404, detail=f"ROM file not found for {game_name}")
-
-@app.get("/api/media/{system}/{media_type:path}/{game_name}")
-async def get_media(system: str, media_type: str, game_name: str):
-    # Construct full media directory path
-    system_media_dir = os.path.join(BASE_PATH, "Media", system)
-    
-    # Possible variations for media_type
-    search_paths = [os.path.join(system_media_dir, media_type)]
-    
-    # Add common fallbacks
-    if "Artwork3D" in media_type:
-        search_paths.append(os.path.join(system_media_dir, "Images", "Artwork3"))
-        search_paths.append(os.path.join(system_media_dir, "Images", "Artwork2"))
-        search_paths.append(os.path.join(system_media_dir, "Images", "Artwork1"))
-    elif "Wheel" in media_type:
-        search_paths.append(os.path.join(system_media_dir, "Wheel"))
-    elif "Video" in media_type:
-        # Check both Images/Video and just Video
-        search_paths.append(os.path.join(system_media_dir, "Video"))
-
-    print(f"DEBUG: Requesting media for {system} - {media_type} - {game_name}")
-    
-    for media_dir in search_paths:
-        if not os.path.exists(media_dir):
-            continue
-            
-        print(f"DEBUG: Searching in {media_dir}")
-        # Case insensitive search
-        try:
-            files = os.listdir(media_dir)
-            for f in files:
-                name_without_ext = os.path.splitext(f)[0]
-                if name_without_ext.lower() == game_name.lower():
-                    return FileResponse(os.path.join(media_dir, f))
-        except Exception as e:
-            print(f"ERROR: listing media dir {media_dir}: {e}")
-
-    raise HTTPException(status_code=404, detail=f"Media file not found for {game_name} in system {system}")
-
+    raise HTTPException(status_code=404, detail="ROM not found")
 
 @app.get("/api/favorites")
 async def get_favorites_list():
@@ -217,13 +235,12 @@ async def toggle_favorite(system: str, game_name: str):
 @app.get("/api/recents")
 async def get_recents_list():
     recents = load_recents()
-    # Format: "system|game_name|timestamp" or just "system|game_name"
-    # We'll return detailed objects for the frontend
     result = []
     for entry in recents:
         try:
-            system, game_name = entry.split("|")
-            result.append({"system": system, "name": game_name})
+            parts = entry.split("|")
+            if len(parts) >= 2:
+                result.append({"system": parts[0], "name": parts[1]})
         except:
             continue
     return {"recents": result}
@@ -232,130 +249,153 @@ async def get_recents_list():
 async def track_recent_game(system: str, game_name: str):
     entry = f"{system}|{game_name}"
     recents = load_recents()
-    
-    # Remove if already exists to move to top
     if entry in recents:
         recents.remove(entry)
-    
     recents.insert(0, entry)
     save_recents(recents)
     return {"status": "tracked", "game": game_name}
 
 @app.post("/api/launch/{system}/{game_name}")
 async def launch_game(system: str, game_name: str):
-    # System to RetroArch core mapping
-    CORE_MAP = {
-        'MAME': 'mame_libretro.dylib',
-        'Nintendo Entertainment System': 'fceumm_libretro.dylib',
-        'Super Nintendo Entertainment System': 'snes9x_libretro.dylib',
-        'Nintendo Game Boy Advance': 'mgba_libretro.dylib',
-        'Nintendo Gameboy': 'gambatte_libretro.dylib',
-        'Nintendo Gameboy Color': 'gambatte_libretro.dylib',
-        'Sega Genesis': 'genesis_plus_gx_libretro.dylib',
-        'Nintendo 64': 'mupen64plus_next_libretro.dylib',
-        'Sega Master System': 'genesis_plus_gx_libretro.dylib',
-        'Sega Game Gear': 'genesis_plus_gx_libretro.dylib',
-        'Atari 2600': 'stella_libretro.dylib',
-        'Atari 7800': 'prosystem_libretro.dylib',
-        'Sony PlayStation': 'pcsx_rearmed_libretro.dylib',
-        'Nintendo DS': 'desmume_libretro.dylib',
-        'Amstrad CPC': 'cap32_libretro.dylib',
-        'Amstrad GX4000': 'cap32_libretro.dylib',
-        'Atari 5200': 'atari800_libretro.dylib',
-        'Atari Jaguar': 'virtualjaguar_libretro.dylib',
-        'Atari Lynx': 'handy_libretro.dylib',
-        'Bandai WonderSwan Color': 'mednafen_wswan_libretro.dylib',
-        'ColecoVision': 'bluemsx_libretro.dylib',
-        'Commodore 64': 'vice_x64_libretro.dylib',
-        'GCE Vectrex': 'vecx_libretro.dylib',
-        'Magnavox Odyssey 2': 'o2em_libretro.dylib',
-        'Microsoft MSX': 'bluemsx_libretro.dylib',
-        'Microsoft MSX2': 'bluemsx_libretro.dylib',
-        'NEC PC Engine': 'mednafen_pce_fast_libretro.dylib',
-        'Neo Geo': 'fbneo_libretro.dylib',
-        'Neo Geo Pocket': 'mednafen_ngp_libretro.dylib',
-        'Neo Geo Pocket Color': 'mednafen_ngp_libretro.dylib',
-        'Nintendo Famicom': 'fceumm_libretro.dylib',
-        'Nintendo Virtual Boy': 'mednafen_vb_libretro.dylib',
-        'Panasonic 3DO': 'opera_libretro.dylib',
-        'Sega 32X': 'picodrive_libretro.dylib',
-        'Sega CD': 'genesis_plus_gx_libretro.dylib',
-        'Sega SG-1000': 'genesis_plus_gx_libretro.dylib',
-        'Sega Saturn': 'yabause_libretro.dylib',
-        'Sega Dreamcast': 'flycast_libretro.dylib',
-        'Nintendo GameCube': 'dolphin_libretro.dylib',
-        'Sony PSP': 'ppsspp_libretro.dylib',
-        'Sony Playstation': 'pcsx_rearmed_libretro.dylib',
-        'Sharp X68000': 'px68k_libretro.dylib',
-        'ZX Spectrum': 'fuse_libretro.dylib'
-    }
-    
-    # Get the ROM path
-    system_rom_dir = os.path.join(BASE_PATH, "Emulators", system, "roms")
-    if not os.path.exists(system_rom_dir):
-        system_rom_dir = os.path.join(BASE_PATH, "Emulators", system)
-    
-    if not os.path.exists(system_rom_dir):
-        raise HTTPException(status_code=404, detail="System ROM directory not found")
-
-    # Find the actual ROM file
-    rom_file = None
-    files = sorted(os.listdir(system_rom_dir))
-    
-    base_name = game_name
-    extensions = ['.zip', '.nes', '.sfc', '.smc', '.gba', '.gb', '.gbc', '.bin', '.gen', '.n64', '.z64', '.v64', '.md', '.iso', '.pbp', '.cue', '.chd', '.gcz', '.rvz', '.dsk', '.dim']
-    for ext in extensions:
-        if game_name.lower().endswith(ext):
-            base_name = game_name[:-len(ext)]
-            break
-
-    for f in files:
-        f_base = os.path.splitext(f)[0].lower()
-        if f_base == base_name.lower() or f.lower() == game_name.lower() or base_name.lower() in f.lower():
-            rom_file = os.path.join(system_rom_dir, f)
-            break
-            
-    if not rom_file:
-        raise HTTPException(status_code=404, detail=f"ROM file not found for {game_name}")
-
+    # Try local launch logic
     try:
-        # Get the core for this system
-        core_name = CORE_MAP.get(system)
-        cores_dir = os.path.expanduser("~/Library/Application Support/RetroArch/cores")
-        
-        if core_name and os.path.exists(os.path.join(cores_dir, core_name)):
-            # Launch with specific core in fullscreen
-            core_path = os.path.join(cores_dir, core_name)
-            cmd = ["/Applications/RetroArch.app/Contents/MacOS/RetroArch", "-f", "-L", core_path, rom_file]
-            subprocess.Popen(cmd)
-            return {"status": "launched", "game": game_name, "core": core_name, "command": " ".join(cmd)}
+        # Resolve ROM path
+        rom_path = None
+        search_dirs = [
+            os.path.join(BASE_PATH, system),
+            os.path.join(BASE_PATH, "Emulators", system, "roms")
+        ]
+        base_name = os.path.splitext(game_name)[0]
+        for d in search_dirs:
+            if not os.path.exists(d): continue
+            for f in os.listdir(d):
+                if f == game_name or os.path.splitext(f)[0] == base_name:
+                    rom_path = os.path.join(d, f)
+                    break
+            if rom_path: break
+
+        if not rom_path:
+            raise HTTPException(status_code=404, detail="ROM not found")
+
+        # Command to launch RetroArch (Adjust based on host OS if possible, or assume generic 'retroarch')
+        # In Docker, this executes IN the container.
+        # Ideally, we should communicate with the host, but here we assume a local setup or mapped socket.
+        cmd = ["retroarch", "-L", f"{system}_libretro.so", rom_path]
+
+        # Check if 'retroarch' is in path
+        if shutil.which("retroarch"):
+             subprocess.Popen(cmd)
+             return {"status": "launched", "command": " ".join(cmd)}
         else:
-            # Fallback to GUI mode if core not found
-            cmd = ["open", "-a", "RetroArch", rom_file]
-            subprocess.Popen(cmd)
-            return {"status": "launched", "game": game_name, "mode": "gui_fallback", "rom_path": rom_file}
+             # Fallback: just try to open it (macOS/Linux)
+             if sys.platform == "darwin":
+                 subprocess.Popen(["open", "-a", "RetroArch", rom_path])
+             else:
+                 subprocess.Popen(["xdg-open", rom_path])
+             return {"status": "launched", "mode": "fallback"}
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to launch RetroArch: {str(e)}")
+        logger.error(f"Launch failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/v1/system/status")
-async def get_system_status():
-    return {
-        "status": "operational",
-        "version": "1.0.0",
-        "neural_link": "stable"
-    }
-@app.websocket("/ws")
-@app.websocket("/api/v1/ws")
-async def websocket_endpoint(websocket):
-    # Fallback to prevent AssertionError in uvicorn/starlette when clients try to connect to non-WS endpoints
-    await websocket.accept()
+import shutil
+
+# --- API Endpoints: Store (RGSX) ---
+
+@app.get("/api/store/platforms")
+async def get_store_platforms():
+    """Returns the list of systems available in RGSX."""
     try:
-        while True:
-            await websocket.receive_text()
-    except:
-        pass
+        sources = load_sources()
+        platforms = []
+        for s in sources:
+            platforms.append({
+                "id": s.get("id"),
+                "name": s.get("platform_name"),
+                "folder": s.get("folder") or s.get("dossier")
+            })
+        return {"platforms": platforms}
+    except Exception as e:
+        logger.error(f"Error loading store platforms: {e}")
+        return {"platforms": [], "error": str(e)}
 
-# Serve client files
+@app.get("/api/store/games/{platform_name}")
+async def get_store_games(platform_name: str):
+    """Returns the game list for a specific RGSX platform."""
+    try:
+        json_path = os.path.join(rgsx_config.GAMES_FOLDER, f"{platform_name}.json")
+        if not os.path.exists(json_path):
+            return {"games": [], "error": "Game list not found"}
+            
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            games = []
+            raw_list = data.get("game_list", []) if isinstance(data, dict) else data
+
+            for g in raw_list:
+                games.append({
+                    "name": g.get("name"),
+                    "url": g.get("url"),
+                    "size": g.get("size", "Unknown"),
+                    "region": g.get("region", "")
+                })
+            return {"games": games}
+    except Exception as e:
+        logger.error(f"Error loading store games for {platform_name}: {e}")
+        return {"games": [], "error": str(e)}
+
+@app.post("/api/store/download")
+async def download_game(request: DownloadRequest, background_tasks: BackgroundTasks):
+    """Initiates a download task."""
+    try:
+        import time
+        task_id = str(int(time.time() * 1000))
+        job = {
+            "url": request.url,
+            "game_name": request.game_name,
+            "platform": request.platform,
+            "task_id": task_id,
+            "is_zip_non_supported": False
+        }
+        rgsx_config.download_queue.append(job)
+        return {"status": "queued", "task_id": task_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/store/tasks")
+async def get_tasks():
+    try:
+        tasks = []
+        for url, data in rgsx_config.download_progress.items():
+            tasks.append({
+                "task_id": "active",
+                "game_name": data.get("game_name", "Unknown"),
+                "platform": data.get("platform", ""),
+                "status": data.get("status", "Downloading"),
+                "progress": data.get("progress_percent", 0),
+                "speed": data.get("speed", 0),
+            })
+        for i, job in enumerate(rgsx_config.download_queue):
+            tasks.append({
+                "task_id": job.get("task_id"),
+                "game_name": job.get("game_name"),
+                "status": "Queued"
+            })
+        return {"tasks": tasks}
+    except Exception as e:
+        return {"tasks": [], "error": str(e)}
+
+@app.post("/api/store/cancel/{task_id}")
+async def cancel_task(task_id: str):
+    try:
+        from rgsx.network import request_cancel
+        success = request_cancel(task_id)
+        rgsx_config.download_queue = [j for j in rgsx_config.download_queue if j.get("task_id") != task_id]
+        return {"status": "cancelled", "success": success}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Serve client files (SPA catch-all could be better but static mount is fine for this structure)
 app.mount("/", StaticFiles(directory=CLIENT_DIR, html=True), name="static")
 
 if __name__ == "__main__":
