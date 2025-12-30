@@ -1,79 +1,98 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Retro Launcher</title>
-    <link rel="stylesheet" href="style.css?v=5">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>Retro CyberDeck</title>
+    <link rel="stylesheet" href="style.css?v=6">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- EmulatorJS -->
+    <script src="https://cdn.emulatorjs.org/latest/data/loader.js"></script>
 </head>
-
 <body>
-    <!-- Simple boot screen -->
-    <div id="terminal-boot" class="hidden">
-        <div class="boot-text"></div>
-    </div>
 
-    <!-- Clean header -->
-    <header>
-        <div class="header-main">
-            <h1>🎮 Retro Launcher</h1>
-            <input type="text" id="game-search" placeholder="Search games..." autocomplete="off">
-        </div>
-        <div class="header-status">
-            <div id="system-ticker" class="ticker">INITIALIZING_NEURAL_LINK...</div>
-            <div class="neural-meter">
-                <span id="neural-date">HEX_TIME: 00:00:00</span>
-                <span id="neural-load">LOAD: 0%</span>
-            </div>
+    <!-- Header -->
+    <header class="app-header">
+        <div class="brand" data-text="CYBERDECK">CYBERDECK</div>
+        <div class="header-actions">
+            <input type="text" id="global-search" class="search-bar" placeholder="SEARCH_DATABASE..." autocomplete="off">
+            <div id="clock" style="font-family: 'Roboto Mono', monospace; color: var(--md-sys-color-primary);">00:00:00</div>
         </div>
     </header>
 
-    <!-- Main content area -->
-    <div class="container">
-        <!-- Systems sidebar -->
-        <aside class="systems">
-            <h2>Systems</h2>
-            <ul id="system-list">
-                <li id="system-recents" class="system-item">★ Recents</li>
-            </ul>
-        </aside>
-
-        <!-- Game grid -->
-        <main class="content">
-            <div class="content-header">
-                <h2 id="current-system-title">Select a System</h2>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <nav class="app-sidebar">
+            <div class="nav-section">LIBRARY</div>
+            <div class="nav-item active" data-view="library-all">
+                <span>📚</span> All Games
             </div>
-            <div id="game-grid" class="game-grid"></div>
+            <div class="nav-item" data-view="library-favorites">
+                <span>♥</span> Favorites
+            </div>
+            <div class="nav-item" data-view="library-recents">
+                <span>clock</span> Recents
+            </div>
+
+            <div class="nav-section">STORE (RGSX)</div>
+            <div class="nav-item" data-view="store-browse">
+                <span>cloud_download</span> Browse
+            </div>
+            <div class="nav-item" data-view="store-tasks">
+                <span>downloading</span> Downloads
+            </div>
+
+            <div class="nav-section">SYSTEMS</div>
+            <div id="system-list-container">
+                <!-- Populated by JS -->
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="app-content">
+
+            <!-- Library View -->
+            <div id="view-library" class="view-section active">
+                <h2 id="library-title" style="margin-top:0; border-bottom: 1px solid #333; padding-bottom: 16px;">ALL GAMES</h2>
+                <div id="library-grid" class="game-grid">
+                    <!-- Game Cards go here -->
+                </div>
+            </div>
+
+            <!-- Store View -->
+            <div id="view-store" class="view-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <h2 style="margin:0;">NEURAL STORE</h2>
+                    <select id="store-platform-select" style="background: #333; color: white; padding: 8px; border: none; border-radius: 4px;">
+                        <option value="">Select Platform...</option>
+                    </select>
+                </div>
+                <div id="store-grid" class="store-grid">
+                    <!-- Store Items go here -->
+                    <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">
+                        SELECT A SYSTEM TO INITIALIZE DATALINK
+                    </div>
+                </div>
+            </div>
+
         </main>
-
-        <!-- Game details panel -->
-        <aside class="details">
-            <div id="game-details">
-                <div class="placeholder">Select a game to see details</div>
-            </div>
-            <div class="actions">
-                <button id="launch-native-btn" class="btn primary" disabled>▶ Play</button>
-                <button id="execute-btn" class="btn secondary" disabled>🌐 Web</button>
-                <button id="favorite-btn" class="btn icon">♥</button>
-            </div>
-        </aside>
     </div>
 
-    <!-- Fullscreen emulator -->
-    <div id="emulator-container" class="hidden">
-        <div class="emulator-header">
-            <span id="emu-title">Playing...</span>
-            <button id="close-emu">✕ Close</button>
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Emulator Overlay -->
+    <div id="emulator-overlay" style="display: none;">
+        <div class="emu-controls">
+            <span id="emu-game-title" style="margin-right: auto; font-weight: bold;">Game Title</span>
+            <button class="emu-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+            <button class="emu-btn" onclick="closeEmulator()" style="background: var(--md-sys-color-error);">✕ Close</button>
         </div>
         <div id="emulator-target"></div>
-        <div class="emulator-footer">
-            <div id="emu-logs"></div>
-        </div>
     </div>
 
-    <script src="app.js?v=4"></script>
+    <script src="gamepad.js"></script>
+    <script src="gamepad.js"></script>
+    <script src="app.js?v=6"></script>
 </body>
-
 </html>
